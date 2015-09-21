@@ -48,14 +48,15 @@ void getprompt()
 	char* temp=strstr(dir,home);
 	if (temp)
 	{
-		printf("%s\n",temp);
-	strcpy(display_dir,dir+strlen(home));
+		strcpy(display_dir,dir+strlen(home));
 		printf("%s@%s:~%s",username,host,display_dir);
+		fflush(stdout);
 	}
 	else
 	{
 		strcpy(display_dir,dir);
 		printf("%s@%s:%s ",username,host,display_dir);
+		fflush(stdout);
 	}
 }
 
@@ -137,20 +138,37 @@ process* get_process_job(int n)
 	}
 	return temp;
 }
+void delete_process(int pid)
+{
+	process* t=process_head;
+	if(t->pid==pid) process_head=process_head->next;
+	t->next=NULL; free(t);
+	while(t->next!=NULL)
+	{
+		if(t->next->pid==pid)
+		{
+			process* temp=t->next;
+			t->next=temp->next;
+			temp->next=NULL;
+			free(temp);
+			return;
+		}
+		
+	}
+}
 void sighandler(int sig)
 {
-	// if(sig==SIGINT)
-	// {
-	// 	printf("sdfkj\n");
-	// 	getprompt();
-	// }
+	if(sig==SIGINT)
+	{
+		printf("\n");
+		getprompt();
+		fflush(stdout);
+		}
 	if(sig==SIGCHLD)
 	{
-		printf("sigchild called\n");
-		int pid,status;
-		while(pid=waitpid(-1,&status,WNOHANG)>0)
+		pid_t pid,status;
+		while((pid=waitpid(-1,&status,WNOHANG))>0)
 		{
-			printf("process with pid %d exited \n",pid);
 			if(pid!=-1 && pid!=0)
 			{
 				if(WIFEXITED(status))				
@@ -158,8 +176,10 @@ void sighandler(int sig)
 					process* temp=get_process_pid(pid);
 					if(temp!=NULL)
 					{
-						printf("%s with pid %d exited normally\n",temp->name,temp->pid);
-						//remove_process(pid);
+						printf("\n%s with pid %d exited normally\n",temp->name,temp->pid);
+						getprompt();
+						fflush(stdout);
+						delete_process(pid);
 					}
 				}
 				else if(WIFSIGNALED(status))
@@ -167,13 +187,26 @@ void sighandler(int sig)
 					process* temp=get_process_pid(pid);
 					if(temp!=NULL)
 					{
-						printf("%s with pid %d signalled to exit\n",temp->name,temp->pid);
-						//remove_process(pid);
+						printf("\n%s with pid %d signalled to exit\n",temp->name,temp->pid);
+						getprompt();	
+						fflush(stdout);
+						delete_process(pid);
 					}
 				}
 			}
 		 }		
 	}
+	// if(sig==SIGTSTP)
+	// {
+	// 	printf("%d\n",getpid());
+	// 	fflush(stdout);
+	// 	printf("%d %d\n",getpid(),shell_pgid);
+	// 	fflush(stdout);
+	// 	tcsetpgrp(fd_shell,shell_pgid);
+	// 	printf("\n");
+	// 	getprompt();
+	// 	fflush(stdout);
+	// }
 }
 
 void init()
@@ -290,7 +323,7 @@ void run(command* temp)
 			dup2(in,0);
 			close(in);
 		}
-		else if (temp->outfile!=NULL)
+		if (temp->outfile!=NULL)
 		{
 			int out = open(temp->outfile,O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IRGRP | S_IWGRP | S_IWUSR);
 			dup2(out,1);
@@ -307,6 +340,7 @@ void execute()
 	int ret_value;
 	if(strcmp(temp->argv[0],"jobs")==0)
 	{
+	//	print_process();
 		int i=0;
 		process* temp=process_head;
 		while(temp!=NULL)
@@ -332,7 +366,8 @@ void execute()
 	{
 		if(temp->argc!=2)
 		{
-			printf("fg takes 1 argument %d given",temp->argc-1);
+			printf("fg takes 1 argument %d given\n",temp->argc-1);
+			fflush(stdout);
 		}
 		else
 		{
@@ -345,6 +380,7 @@ void execute()
 			{
 				tcsetpgrp(fd_shell,getpgid(temp1->pid));
 				waitpid(temp1->pid,NULL,WUNTRACED);
+				tcsetpgrp(fd_shell,shell_pgid);
 			}
 		}
 	}
@@ -385,7 +421,7 @@ void execute()
 		if(ret_value==-1)
 		{
 			printf("No such directory exists\n");
-		}
+			}
 	}
 	else if(strcmp(temp->argv[0],"exit")==0)
 	{
@@ -396,12 +432,13 @@ void execute()
 		int pid=fork();
 		if(pid==0)
 		{
-			setpgid(getpid(),getpid());
+			
+			setpgid(0,0);
 			if(background==0) 
 				tcsetpgrp(fd_shell,getpid());
 			signal (SIGINT, SIG_DFL);
 			signal (SIGQUIT, SIG_DFL);
-			signal (SIGTSTP, SIG_DFL);
+			signal (SIGTSTP, sighandler);
 			signal (SIGTTIN, SIG_DFL);
 			signal (SIGTTOU, SIG_DFL);
 			signal (SIGCHLD, SIG_DFL);
@@ -413,12 +450,7 @@ void execute()
 			int status;
 			tcsetpgrp(fd_shell,pid);
 			waitpid(pid,&status,WUNTRACED);
-			// if(!WIFSTOPPED(status))
-			// {
-			// 	//remove_process(pid);
-			// }
-			// else
-			// 	printf("\n[%d]+ stopped %s\n",pid,temp->argv[0]);
+			signal (SIGTSTP, sighandler);
 			tcsetpgrp(fd_shell,shell_pgid);
 		}
 		else if(background==1)
@@ -427,6 +459,7 @@ void execute()
 			insert_process(temp->argv[0],pid);
 		}
 	}
+	fflush(stdout);
 
 }
 void piped_execute(int n)
@@ -475,26 +508,20 @@ void delete_command(command* head)
 	delete_command(head->next);
 	free(head);
 }
-void delete_process(process* head)
-{
-	if(head==NULL) return;
-	if(head->next==NULL) { free(head); return ; }
-	delete_process(head->next);
-	free(head);
-}
+
 int main()
 {
 	init();
-//	signal(SIGINT,sighandler);
 	input=malloc(sizeof(char)*1000)	;
-//	printf("%d\n",getpid());
 	while(1)
 	{
 		signal(SIGCHLD,sighandler);
+		signal(SIGINT,sighandler);
+		signal(SIGTSTP,sighandler);
 		background=0;
 		getprompt();
 		scanf(" %[^\n]",input);
-		printf(" input  %s\n",input);
+		//input=readline();
 		int i;
 		for(i=strlen(input);i>=0;i--)
 		{
@@ -502,17 +529,12 @@ int main()
 			else if(input[i]=='&') { input[i]=' '; background=1; break; }
 		}
 		int num=parse(input);
-		printf("num %d\n",num);
-		print_command();		print_process();
-
+		//print_command();
 		if (num==1) execute();
 		else piped_execute(num);
 		fflush(stdout);
 		command_head=NULL;
-		process_head=NULL;
-//		sleep(2);
-		//delete_command(command_head);
-		//delete_process(process_head);
+		delete_command(command_head);
 	}
 }
  

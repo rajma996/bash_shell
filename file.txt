@@ -1,0 +1,5 @@
+total 52
+-rwxrwxr-x 1 raj raj 19328 Sep 21 11:21 a.out
+-rw-rw---- 1 raj raj    55 Sep 20 18:28 diff.c
+-rw-rw-r-- 1 raj raj   424 Sep 18 12:48 new.c
+-rw-rw---- 1 raj raj    41 Sep 20 18:20 out.txt
